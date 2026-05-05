@@ -3,7 +3,6 @@ import './App.css';
 import Chat from './components/Chat';
 import CarCard from './components/CarCard';
 import DealDetails from './components/DealDetails';
-import Questionnaire from './components/Questionnaire';
 
 function App() {
   const [messages, setMessages] = useState([]);
@@ -12,13 +11,41 @@ function App() {
   const [selectedDeal, setSelectedDeal] = useState(null);
   const [loading, setLoading] = useState(false);
   const [analyzingCarId, setAnalyzingCarId] = useState(null);
-  const [questionnaireCompleted, setQuestionnaireCompleted] = useState(false);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [questionnaireAnswers, setQuestionnaireAnswers] = useState({
+    budget: '',
+    carType: '',
+    brand: '',
+    condition: '',
+    fuel: ''
+  });
   const messagesEndRef = useRef(null);
+
+  const questions = [
+    "What is your budget? (e.g., $20,000 - $30,000 or $25,000)",
+    "Are you looking for an SUV, sedan, or truck?",
+    "Do you have a preferred brand? (e.g., Toyota, Honda, Ford, or 'No preference')",
+    "Do you want a new or used car?",
+    "Do you prefer gas, hybrid, or electric?"
+  ];
+
+  const answerKeys = ['budget', 'carType', 'brand', 'condition', 'fuel'];
 
   // Auto-scroll to latest message
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Initialize with first question
+  useEffect(() => {
+    if (messages.length === 0 && currentQuestionIndex === 0) {
+      const initialQuestion = {
+        type: 'assistant',
+        content: `Welcome to Car Advisor! I'll help you find your perfect car. Let me ask you a few questions.\n\n${questions[0]}`
+      };
+      setMessages([initialQuestion]);
+    }
+  }, []);
 
   // Handle user message submission
   const handleSendMessage = async (e) => {
@@ -26,13 +53,101 @@ function App() {
     
     if (!inputValue.trim()) return;
 
+    const userInput = inputValue;
+    setInputValue('');
+
     // Add user message to chat
     const userMessage = {
       type: 'user',
-      content: inputValue
+      content: userInput
     };
     setMessages(prev => [...prev, userMessage]);
-    setInputValue('');
+
+    // Handle questionnaire phase
+    if (currentQuestionIndex < questions.length) {
+      // Store the answer
+      const answerKey = answerKeys[currentQuestionIndex];
+      setQuestionnaireAnswers(prev => ({
+        ...prev,
+        [answerKey]: userInput
+      }));
+
+      const nextQuestionIndex = currentQuestionIndex + 1;
+      setCurrentQuestionIndex(nextQuestionIndex);
+
+      // If more questions, ask the next one
+      if (nextQuestionIndex < questions.length) {
+        const nextQuestion = {
+          type: 'assistant',
+          content: questions[nextQuestionIndex]
+        };
+        setMessages(prev => [...prev, nextQuestion]);
+      } else {
+        // All questions answered, prepare to call API
+        const updatedAnswers = {
+          ...questionnaireAnswers,
+          [answerKey]: userInput
+        };
+
+        setLoading(true);
+
+        // Create initial prompt from questionnaire answers
+        const initialPrompt = `I'm looking for a car with the following requirements:
+- Budget: ${updatedAnswers.budget}
+- Type: ${updatedAnswers.carType}
+- Brand preference: ${updatedAnswers.brand}
+- Condition: ${updatedAnswers.condition}
+- Fuel type: ${updatedAnswers.fuel}
+
+Please recommend the best cars that match my requirements.`;
+
+        try {
+          // Call /chat API
+          const response = await fetch('https://wyrbh3p649.execute-api.us-east-1.amazonaws.com/Dev', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ message: initialPrompt })
+          });
+
+          const data = await response.json();
+          
+          // Parse the response - handle nested JSON structure
+          let parsedResponse;
+          if (typeof data.body === 'string') {
+            const bodyJson = JSON.parse(data.body);
+            parsedResponse = JSON.parse(bodyJson.response);
+          } else {
+            parsedResponse = data;
+          }
+
+          // Add assistant message (summary)
+          const assistantMessage = {
+            type: 'assistant',
+            content: parsedResponse.summary
+          };
+          setMessages(prev => [...prev, assistantMessage]);
+
+          // Store recommendations
+          if (parsedResponse.recommendations) {
+            setRecommendations(parsedResponse.recommendations);
+          }
+
+          setLoading(false);
+        } catch (error) {
+          console.error('Error calling /chat API:', error);
+          setMessages(prev => [...prev, {
+            type: 'assistant',
+            content: 'Sorry, I encountered an error. Please try again.'
+          }]);
+          setLoading(false);
+        }
+      }
+      return;
+    }
+
+    // Regular chat after questionnaire is complete
     setLoading(true);
 
     try {
@@ -42,7 +157,7 @@ function App() {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ message: inputValue })
+        body: JSON.stringify({ message: userInput })
       });
 
       const data = await response.json();
@@ -104,78 +219,6 @@ function App() {
       setLoading(false);
     }
   };
-
-  // Handle questionnaire submission
-  const handleQuestionnaireSubmit = async (answers) => {
-    // Create initial prompt from questionnaire answers
-    const initialPrompt = `I'm looking for a car with the following requirements:
-- Budget: ${answers.budget}
-- Type: ${answers.carType}
-- Brand preference: ${answers.brand}
-- Condition: ${answers.condition}
-- Fuel type: ${answers.fuel}
-
-Please recommend the best cars that match my requirements.`;
-
-    // Mark questionnaire as completed
-    setQuestionnaireCompleted(true);
-    setLoading(true);
-
-    try {
-      // Add user message to chat
-      const userMessage = {
-        type: 'user',
-        content: initialPrompt
-      };
-      setMessages([userMessage]);
-
-      // Call /chat API with questionnaire data
-      const response = await fetch('https://wyrbh3p649.execute-api.us-east-1.amazonaws.com/Dev', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ message: initialPrompt })
-      });
-
-      const data = await response.json();
-      
-      // Parse the response - handle nested JSON structure
-      let parsedResponse;
-      if (typeof data.body === 'string') {
-        const bodyJson = JSON.parse(data.body);
-        parsedResponse = JSON.parse(bodyJson.response);
-      } else {
-        parsedResponse = data;
-      }
-
-      // Add assistant message (summary)
-      const assistantMessage = {
-        type: 'assistant',
-        content: parsedResponse.summary
-      };
-      setMessages(prev => [...prev, assistantMessage]);
-
-      // Store recommendations
-      if (parsedResponse.recommendations) {
-        setRecommendations(parsedResponse.recommendations);
-      }
-
-      setLoading(false);
-    } catch (error) {
-      console.error('Error calling /chat API:', error);
-      setMessages(prev => [...prev, {
-        type: 'assistant',
-        content: 'Sorry, I encountered an error. Please try again.'
-      }]);
-      setLoading(false);
-    }
-  };
-
-  // Show questionnaire if not completed
-  if (!questionnaireCompleted) {
-    return <Questionnaire onSubmit={handleQuestionnaireSubmit} />;
-  }
 
   return (
     <div className="app-container">
