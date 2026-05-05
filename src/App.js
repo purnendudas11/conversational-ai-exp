@@ -147,11 +147,11 @@ function App() {
 
     // Create initial prompt in JSON format from questionnaire answers
     const initialPrompt = JSON.stringify({
-      budget: answers.budget,
-      carType: answers.carType,
+      total_price_usd: answers.budget,
+      body_type: answers.carType,
       brand: answers.brand,
       condition: answers.condition,
-      fuel: answers.fuel
+      fuel_type: answers.fuel
     });
 
     try {
