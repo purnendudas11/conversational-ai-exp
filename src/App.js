@@ -3,6 +3,7 @@ import './App.css';
 import Chat from './components/Chat';
 import CarCard from './components/CarCard';
 import DealDetails from './components/DealDetails';
+import Questionnaire from './components/Questionnaire';
 
 function App() {
   const [messages, setMessages] = useState([]);
@@ -11,6 +12,7 @@ function App() {
   const [selectedDeal, setSelectedDeal] = useState(null);
   const [loading, setLoading] = useState(false);
   const [analyzingCarId, setAnalyzingCarId] = useState(null);
+  const [questionnaireCompleted, setQuestionnaireCompleted] = useState(false);
   const messagesEndRef = useRef(null);
 
   // Auto-scroll to latest message
@@ -103,6 +105,78 @@ function App() {
     }
   };
 
+  // Handle questionnaire submission
+  const handleQuestionnaireSubmit = async (answers) => {
+    // Create initial prompt from questionnaire answers
+    const initialPrompt = `I'm looking for a car with the following requirements:
+- Budget: ${answers.budget}
+- Type: ${answers.carType}
+- Brand preference: ${answers.brand}
+- Condition: ${answers.condition}
+- Fuel type: ${answers.fuel}
+
+Please recommend the best cars that match my requirements.`;
+
+    // Mark questionnaire as completed
+    setQuestionnaireCompleted(true);
+    setLoading(true);
+
+    try {
+      // Add user message to chat
+      const userMessage = {
+        type: 'user',
+        content: initialPrompt
+      };
+      setMessages([userMessage]);
+
+      // Call /chat API with questionnaire data
+      const response = await fetch('https://wyrbh3p649.execute-api.us-east-1.amazonaws.com/Dev', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ message: initialPrompt })
+      });
+
+      const data = await response.json();
+      
+      // Parse the response - handle nested JSON structure
+      let parsedResponse;
+      if (typeof data.body === 'string') {
+        const bodyJson = JSON.parse(data.body);
+        parsedResponse = JSON.parse(bodyJson.response);
+      } else {
+        parsedResponse = data;
+      }
+
+      // Add assistant message (summary)
+      const assistantMessage = {
+        type: 'assistant',
+        content: parsedResponse.summary
+      };
+      setMessages(prev => [...prev, assistantMessage]);
+
+      // Store recommendations
+      if (parsedResponse.recommendations) {
+        setRecommendations(parsedResponse.recommendations);
+      }
+
+      setLoading(false);
+    } catch (error) {
+      console.error('Error calling /chat API:', error);
+      setMessages(prev => [...prev, {
+        type: 'assistant',
+        content: 'Sorry, I encountered an error. Please try again.'
+      }]);
+      setLoading(false);
+    }
+  };
+
+  // Show questionnaire if not completed
+  if (!questionnaireCompleted) {
+    return <Questionnaire onSubmit={handleQuestionnaireSubmit} />;
+  }
+
   return (
     <div className="app-container">
       <div className="app-header">
@@ -143,7 +217,7 @@ function App() {
           <div className="recommendations-section">
             <h2>Recommended Cars</h2>
             <div className="cars-grid">
-              {recommendations.map((car, index) => (
+              {[...recommendations].sort((a, b) => b.best_value - a.best_value).map((car, index) => (
                 <CarCard 
                   key={index} 
                   car={car}
