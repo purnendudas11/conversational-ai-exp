@@ -88,61 +88,8 @@ function App() {
           ...questionnaireAnswers,
           [answerKey]: userInput
         };
-
-        setLoading(true);
-
-        // Create initial prompt from questionnaire answers
-        const initialPrompt = `I'm looking for a car with the following requirements:
-- Budget: ${updatedAnswers.budget}
-- Type: ${updatedAnswers.carType}
-- Brand preference: ${updatedAnswers.brand}
-- Condition: ${updatedAnswers.condition}
-- Fuel type: ${updatedAnswers.fuel}
-
-Please recommend the best cars that match my requirements.`;
-
-        try {
-          // Call /chat API
-          const response = await fetch('https://wyrbh3p649.execute-api.us-east-1.amazonaws.com/Dev', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ message: initialPrompt })
-          });
-
-          const data = await response.json();
-          
-          // Parse the response - handle nested JSON structure
-          let parsedResponse;
-          if (typeof data.body === 'string') {
-            const bodyJson = JSON.parse(data.body);
-            parsedResponse = JSON.parse(bodyJson.response);
-          } else {
-            parsedResponse = data;
-          }
-
-          // Add assistant message (summary)
-          const assistantMessage = {
-            type: 'assistant',
-            content: parsedResponse.summary
-          };
-          setMessages(prev => [...prev, assistantMessage]);
-
-          // Store recommendations
-          if (parsedResponse.recommendations) {
-            setRecommendations(parsedResponse.recommendations);
-          }
-
-          setLoading(false);
-        } catch (error) {
-          console.error('Error calling /chat API:', error);
-          setMessages(prev => [...prev, {
-            type: 'assistant',
-            content: 'Sorry, I encountered an error. Please try again.'
-          }]);
-          setLoading(false);
-        }
+        
+        await callLLMWithAnswers(updatedAnswers);
       }
       return;
     }
@@ -158,6 +105,62 @@ Please recommend the best cars that match my requirements.`;
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ message: userInput })
+      });
+
+      const data = await response.json();
+      
+      // Parse the response - handle nested JSON structure
+      let parsedResponse;
+      if (typeof data.body === 'string') {
+        const bodyJson = JSON.parse(data.body);
+        parsedResponse = JSON.parse(bodyJson.response);
+      } else {
+        parsedResponse = data;
+      }
+
+      // Add assistant message (summary)
+      const assistantMessage = {
+        type: 'assistant',
+        content: parsedResponse.summary
+      };
+      setMessages(prev => [...prev, assistantMessage]);
+
+      // Store recommendations
+      if (parsedResponse.recommendations) {
+        setRecommendations(parsedResponse.recommendations);
+      }
+
+      setLoading(false);
+    } catch (error) {
+      console.error('Error calling /chat API:', error);
+      setMessages(prev => [...prev, {
+        type: 'assistant',
+        content: 'Sorry, I encountered an error. Please try again.'
+      }]);
+      setLoading(false);
+    }
+  };
+
+  // Call LLM API with questionnaire answers
+  const callLLMWithAnswers = async (answers) => {
+    setLoading(true);
+
+    // Create initial prompt in JSON format from questionnaire answers
+    const initialPrompt = JSON.stringify({
+      budget: answers.budget,
+      carType: answers.carType,
+      brand: answers.brand,
+      condition: answers.condition,
+      fuel: answers.fuel
+    });
+
+    try {
+      const response = await fetch('https://wyrbh3p649.execute-api.us-east-1.amazonaws.com/Dev', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ message: initialPrompt })
       });
 
       const data = await response.json();
