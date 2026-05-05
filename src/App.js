@@ -24,7 +24,7 @@ function App() {
   const questions = [
     "What is your budget? (e.g., $20,000 - $30,000 or $25,000)",
     "Are you looking for an SUV, sedan, or truck?",
-    "Do you have a preferred brand? (e.g., Toyota, Honda, Ford, or 'No preference')",
+    "Do you have a preferred brand? (e.g., Toyota, Lexus, or 'No preference')",
     "Do you want a new or used car?",
     "Do you prefer gas, hybrid, or electric?"
   ];
