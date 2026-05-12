@@ -60,7 +60,7 @@ function CarCard({ car, onSelect, isBestValue, isAnalyzing }) {
         {car.valid_from && car.valid_to && (
           <div className="detail-item">
             <span className="detail-label">Valid</span>
-            <span className="detail-value">{car.valid_from} - {car.valid_to}</span>
+            <span className="detail-value">{car.valid_from}   to   {car.valid_to}</span>
           </div>
         )}
       </div>

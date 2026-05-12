@@ -4,6 +4,22 @@ import Chat from './components/Chat';
 import CarCard from './components/CarCard';
 import DealDetails from './components/DealDetails';
 
+import {
+  QUESTIONS,
+  REQUIRED_FIELDS
+} from './config/questions';
+
+import {
+  mergeAnswers,
+  getMissingFields,
+  getNextQuestion
+} from './utils/intakeHelpers';
+
+import { quickExtract } from './utils/quickExtract';
+
+// import { extractAnswersWithLLM } from '../services/extractAnswers';
+
+
 function App() {
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
@@ -11,39 +27,25 @@ function App() {
   const [selectedDeal, setSelectedDeal] = useState(null);
   const [loading, setLoading] = useState(false);
   const [analyzingCarId, setAnalyzingCarId] = useState(null);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [questionnaireAnswers, setQuestionnaireAnswers] = useState({
-    budget: '',
-    carType: '',
-    brand: '',
-    condition: '',
-    fuel: ''
-  });
+  const [answers, setAnswers] = useState({});
+  const [hasGeneratedFirstRecommendation, setHasGeneratedFirstRecommendation] = useState(false);
   const messagesEndRef = useRef(null);
-
-  const questions = [
-    "What is your budget? (e.g., $20,000 - $30,000 or $25,000)",
-    "Are you looking for an SUV, sedan, or truck?",
-    "Do you have a preferred brand? (e.g., Toyota, Lexus, or 'No preference')",
-    "Do you want a new or used car?",
-    "Do you prefer gas, hybrid, or electric?"
-  ];
-
-  const answerKeys = ['budget', 'carType', 'brand', 'condition', 'fuel'];
 
   // Auto-scroll to latest message
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Initialize with first question
+  // Initial greeting
   useEffect(() => {
-    if (messages.length === 0 && currentQuestionIndex === 0) {
-      const initialQuestion = {
-        type: 'assistant',
-        content: `Welcome to Car Advisor! I'll help you find your perfect car. Let me ask you a few questions.\n\n${questions[0]}`
-      };
-      setMessages([initialQuestion]);
+    if (messages.length === 0) {
+      setMessages([
+        {
+          type: 'assistant',
+          content:
+            'Welcome to Car Advisor! Tell me what kind of vehicle you are looking for — budget, SUV/sedan/truck, preferred brand, fuel type, and whether you want new or used.'
+        }
+      ]);
     }
   }, []);
 
@@ -63,136 +65,170 @@ function App() {
     };
     setMessages(prev => [...prev, userMessage]);
 
-    // Handle questionnaire phase
-    if (currentQuestionIndex < questions.length) {
-      // Store the answer
-      const answerKey = answerKeys[currentQuestionIndex];
-      setQuestionnaireAnswers(prev => ({
-        ...prev,
-        [answerKey]: userInput
-      }));
+    // STEP 1 — Quick Extraction
+    let extracted = quickExtract(userInput);
 
-      const nextQuestionIndex = currentQuestionIndex + 1;
-      setCurrentQuestionIndex(nextQuestionIndex);
+    // STEP 2 — Determine if LLM needed
+    const quickMissing = getMissingFields(
+      extracted,
+      REQUIRED_FIELDS
+    );
 
-      // If more questions, ask the next one
-      if (nextQuestionIndex < questions.length) {
-        const nextQuestion = {
-          type: 'assistant',
-          content: questions[nextQuestionIndex]
-        };
-        setMessages(prev => [...prev, nextQuestion]);
-      } else {
-        // All questions answered, prepare to call API
-        const updatedAnswers = {
-          ...questionnaireAnswers,
-          [answerKey]: userInput
-        };
-        
-        await callLLMWithAnswers(updatedAnswers);
-      }
+    // STEP 3 — Merge answers
+    const updatedAnswers = mergeAnswers(
+      answers,
+      extracted
+    );
+
+    setAnswers(updatedAnswers);
+
+    console.log('Updated Answers:', updatedAnswers);
+
+    // STEP 4 — Check missing fields
+    const missingFields = getMissingFields(
+      updatedAnswers,
+      REQUIRED_FIELDS
+    );
+
+    // STEP 5 — If complete -> call recommendation LLM
+    if (missingFields.length === 0 && !hasGeneratedFirstRecommendation) {
+      await generateRecommendations(userInput, true);
+      setHasGeneratedFirstRecommendation(true);
       return;
     }
 
-    // Regular chat after questionnaire is complete
-    setLoading(true);
+    // STEP 5b — If recommendations already generated, call API with user input
+    if (hasGeneratedFirstRecommendation) {
+      await generateRecommendations(userInput, false);
+      return;
+    }
 
-    try {
-      // Call /chat API
-      const response = await fetch('https://wyrbh3p649.execute-api.us-east-1.amazonaws.com/Dev', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ message: userInput })
-      });
+    // STEP 6 — Ask next missing question
+    const nextQuestion = getNextQuestion(
+      updatedAnswers,
+      REQUIRED_FIELDS,
+      QUESTIONS
+    );
 
-      const data = await response.json();
-      
-      // Parse the response - handle nested JSON structure
-      let parsedResponse;
-      if (typeof data.body === 'string') {
-        const bodyJson = JSON.parse(data.body);
-        parsedResponse = JSON.parse(bodyJson.response);
-      } else {
-        parsedResponse = data;
-      }
-
-      // Add assistant message (summary)
-      const assistantMessage = {
-        type: 'assistant',
-        content: parsedResponse.summary
-      };
-      setMessages(prev => [...prev, assistantMessage]);
-
-      // Store recommendations
-      if (parsedResponse.recommendations) {
-        setRecommendations(parsedResponse.recommendations);
-      }
-
-      setLoading(false);
-    } catch (error) {
-      console.error('Error calling /chat API:', error);
-      setMessages(prev => [...prev, {
-        type: 'assistant',
-        content: 'Sorry, I encountered an error. Please try again.'
-      }]);
-      setLoading(false);
+    if (nextQuestion) {
+      setMessages(prev => [
+        ...prev,
+        {
+          type: 'assistant',
+          content: nextQuestion.question
+        }
+      ]);
     }
   };
 
-  // Call LLM API with questionnaire answers
-  const callLLMWithAnswers = async (answers) => {
-    setLoading(true);
+  // Recommendation Call
+  const callLLMWithAnswers = async (
+    collectedAnswers
+  ) => {
+    console.log(
+      'Calling recommendation LLM with:',
+      collectedAnswers
+    );
 
-    // Create initial prompt in JSON format from questionnaire answers
-    const initialPrompt = JSON.stringify({
-      total_price_usd: answers.budget,
-      body_type: answers.carType,
-      brand: answers.brand,
-      condition: answers.condition,
-      fuel_type: answers.fuel
-    });
+    // Simulate API delay
+    await new Promise(resolve =>
+      setTimeout(resolve, 1000)
+    );
 
+    setMessages(prev => [
+      ...prev,
+      {
+        type: 'assistant',
+        content:
+          'Great! I found some vehicle recommendations for you.'
+      }
+    ]);
+  };  
+
+  const generateRecommendations = async (
+    data,
+    isFirstCall = true
+  ) => {
     try {
-      const response = await fetch('https://wyrbh3p649.execute-api.us-east-1.amazonaws.com/Dev', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ message: initialPrompt })
-      });
+      setLoading(true);
 
-      const data = await response.json();
-      
-      // Parse the response - handle nested JSON structure
+      const response = await fetch(
+        'https://wyrbh3p649.execute-api.us-east-1.amazonaws.com/Dev',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            message: data
+          })
+        }
+      );
+
+      const data_response = await response.json();
+
       let parsedResponse;
-      if (typeof data.body === 'string') {
-        const bodyJson = JSON.parse(data.body);
-        parsedResponse = JSON.parse(bodyJson.response);
+
+      if (typeof data_response.body === 'string') {
+        const bodyJson = JSON.parse(data_response.body);
+
+        parsedResponse =
+          typeof bodyJson.response === 'string'
+            ? JSON.parse(bodyJson.response)
+            : bodyJson.response;
       } else {
-        parsedResponse = data;
+        parsedResponse = data_response;
       }
 
-      // Add assistant message (summary)
-      const assistantMessage = {
-        type: 'assistant',
-        content: parsedResponse.summary
-      };
-      setMessages(prev => [...prev, assistantMessage]);
+      console.log('Full API Response:', data_response);
+      console.log('Parsed Response:', parsedResponse);
+      console.log('Recommendations:', parsedResponse.recommendations);
 
-      // Store recommendations
-      if (parsedResponse.recommendations) {
-        setRecommendations(parsedResponse.recommendations);
+      // Add assistant response
+      setMessages(prev => [
+        ...prev,
+        {
+          type: 'assistant',
+          content:
+            parsedResponse.summary ||
+            'Here are some recommendations.'
+        }
+      ]);
+
+      // Save recommendations (always update if present)
+      if (
+        parsedResponse.recommendations &&
+        Array.isArray(
+          parsedResponse.recommendations
+        )
+      ) {
+        console.log('Setting recommendations:', parsedResponse.recommendations);
+        setRecommendations(
+          parsedResponse.recommendations
+        );
+      } else {
+        console.warn('Recommendations not found or not an array', {
+          hasRecommendations: !!parsedResponse.recommendations,
+          isArray: Array.isArray(parsedResponse.recommendations),
+          recommendationsValue: parsedResponse.recommendations
+        });
       }
 
-      setLoading(false);
     } catch (error) {
-      console.error('Error calling /chat API:', error);
-      setMessages(prev => [...prev, {
-        type: 'assistant',
-        content: 'Sorry, I encountered an error. Please try again.'
-      }]);
+      console.error(
+        'Recommendation API error:',
+        error
+      );
+
+      setMessages(prev => [
+        ...prev,
+        {
+          type: 'assistant',
+          content:
+            'Sorry, something went wrong.'
+        }
+      ]);
+    } finally {
       setLoading(false);
     }
   };
@@ -258,23 +294,36 @@ function App() {
           </form>
         </div>
 
-        {/* Recommendations Section */}
-        {recommendations.length > 0 && (
-          <div className="recommendations-section">
-            <h2>Recommended Cars</h2>
+        {/* Recommendations Section (always rendered for debug) */}
+        <div className="recommendations-section" style={{ border: '2px solid red' }}>
+          <h2>Recommended Cars</h2>
+          {/* <div style={{ marginBottom: '10px', padding: '10px', backgroundColor: '#f0f0f0', borderRadius: '4px' }}>
+            <p style={{ margin: '0', fontSize: '12px' }}>DEBUG: recommendations.length = {recommendations.length}</p>
+          </div> */}
+          {recommendations.length > 0 ? (
             <div className="cars-grid">
-              {[...recommendations].sort((a, b) => b.best_value - a.best_value).map((car, index) => (
-                <CarCard 
-                  key={index} 
-                  car={car}
-                  onSelect={handleSelectCar}
-                  isBestValue={car.best_value}
-                  isAnalyzing={analyzingCarId === car.car_name}
-                />
-              ))}
+              {[...recommendations].sort((a, b) => a.monthly_payment_usd - b.monthly_payment_usd).map((car, index) => {
+                console.log('Rendering car:', car);
+                return (
+                  <CarCard 
+                    key={index} 
+                    car={{
+                      ...car,
+                      key_highlight: car.key_highlight || `APR: ${car.apr_percent}%`,
+                      valid_from: car.valid_from || new Date().toISOString().split('T')[0],
+                      valid_to: car.valid_to || new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0]
+                    }}
+                    onSelect={handleSelectCar}
+                    isBestValue={index === 0}
+                    isAnalyzing={analyzingCarId === car.car_name}
+                  />
+                );
+              })}
             </div>
-          </div>
-        )}
+          ) : (
+            <div style={{ color: 'gray', fontSize: '14px' }}>No recommendations to show.</div>
+          )}
+        </div>
       </div>
 
       {/* Deal Details Section */}

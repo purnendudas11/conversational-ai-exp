@@ -18,7 +18,10 @@
 
 .car-card.best-value {
   border: 2px solid #D32F2F;
+  border-top: 2px solid #D32F2F;
   background: linear-gradient(135deg, #FFF5F5 0%, #FFEBEB 100%);
+  padding-top: 28px;
+  overflow: visible;
 }
 
 /* Best Value Badge */
@@ -28,11 +31,13 @@
   right: 16px;
   background: linear-gradient(135deg, #D32F2F 0%, #B71C1C 100%);
   color: white;
-  padding: 4px 12px;
+  padding: 6px 16px;
   border-radius: 20px;
   font-size: 12px;
   font-weight: 600;
   box-shadow: 0 2px 4px rgba(211, 47, 47, 0.3);
+  white-space: nowrap;
+  z-index: 10;
 }
 
 /* Card Header */
