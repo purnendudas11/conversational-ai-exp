@@ -92,7 +92,8 @@ function App() {
 
     // STEP 5 — If complete -> call recommendation LLM
     if (missingFields.length === 0 && !hasGeneratedFirstRecommendation) {
-      await generateRecommendations(userInput, true);
+      const consolidatedMessage = formatAnswersToString(updatedAnswers);
+      await generateRecommendations(consolidatedMessage, true);
       setHasGeneratedFirstRecommendation(true);
       return;
     }
@@ -121,28 +122,19 @@ function App() {
     }
   };
 
-  // Recommendation Call
-  const callLLMWithAnswers = async (
-    collectedAnswers
-  ) => {
-    console.log(
-      'Calling recommendation LLM with:',
-      collectedAnswers
-    );
-
-    // Simulate API delay
-    await new Promise(resolve =>
-      setTimeout(resolve, 1000)
-    );
-
-    setMessages(prev => [
-      ...prev,
-      {
-        type: 'assistant',
-        content:
-          'Great! I found some vehicle recommendations for you.'
-      }
-    ]);
+  // Format collected answers into a natural language string
+  const formatAnswersToString = (answers) => {
+    const parts = [];
+    
+    if (answers.budget) parts.push(`Budget: ${answers.budget}`);
+    if (answers.carType) parts.push(`Car Type: ${answers.carType}`);
+    if (answers.brand) parts.push(`Brand: ${answers.brand}`);
+    if (answers.fuel) parts.push(`Fuel Type: ${answers.fuel}`);
+    if (answers.condition) parts.push(`Condition: ${answers.condition}`);
+    
+    return parts.length > 0 
+      ? `I'm looking for: ${parts.join(', ')}`
+      : '';
   };  
 
   const generateRecommendations = async (

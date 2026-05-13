@@ -12,7 +12,10 @@ function CarCard({ car, onSelect, isBestValue, isAnalyzing }) {
   };
 
   const formatDecimal = (value) => {
-    return value.toFixed(2);
+    if (value === null || value === undefined || isNaN(value)) {
+      return 'N/A';
+    }
+    return parseFloat(value).toFixed(2);
   };
 
   return (
