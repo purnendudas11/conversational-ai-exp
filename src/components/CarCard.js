@@ -19,14 +19,7 @@ function CarCard({ car, onSelect, isBestValue, isAnalyzing }) {
   };
 
   return (
-    <div className={`car-card ${isBestValue ? 'best-value' : ''} ${isAnalyzing ? 'analyzing' : ''}`}>
-      {isAnalyzing && (
-        <div className="analyzing-overlay">
-          <div className="analyzing-spinner"></div>
-          <p className="analyzing-text">AI Analyzing...</p>
-        </div>
-      )}
-      
+        <div className={`car-card ${isBestValue ? 'best-value' : ''}`}>
       {isBestValue && <div className="best-value-badge">Best Value</div>}
       
       <div className="car-card-header">

@@ -22,22 +22,25 @@
   background: linear-gradient(135deg, #FFF5F5 0%, #FFEBEB 100%);
   padding-top: 28px;
   overflow: visible;
+  position: relative;
 }
 
 /* Best Value Badge */
 .best-value-badge {
   position: absolute;
-  top: -12px;
+  top: 10px;
   right: 16px;
   background: linear-gradient(135deg, #D32F2F 0%, #B71C1C 100%);
   color: white;
-  padding: 6px 16px;
+  padding: 4px 12px;
   border-radius: 20px;
   font-size: 12px;
   font-weight: 600;
   box-shadow: 0 2px 4px rgba(211, 47, 47, 0.3);
-  white-space: nowrap;
+  overflow: visible;
+  /* white-space: nowrap;
   z-index: 10;
+  overflow: visible; */
 }
 
 /* Card Header */
